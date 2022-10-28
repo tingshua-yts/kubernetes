@@ -239,13 +239,15 @@ func New(client clientset.Interface,
 		}
 		options.profiles = cfg.Profiles
 	}
+	// 创建schedulerCache
 	schedulerCache := internalcache.New(30*time.Second, stopEverything)
 
+	// 创建InTreeRegistry, 并merge out tree
 	registry := frameworkplugins.NewInTreeRegistry()
 	if err := registry.Merge(options.frameworkOutOfTreeRegistry); err != nil {
 		return nil, err
 	}
-
+	// 创建snapshot
 	snapshot := internalcache.NewEmptySnapshot()
 	clusterEventMap := make(map[framework.ClusterEvent]sets.String)
 

@@ -1,0 +1,10 @@
+apiVersion: kubescheduler.config.k8s.io/v1beta1
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: /Users/tingshuai.yts/.kube/config
+leaderElection:
+
+  leaderElect: false
+
+profiles:
+- schedulerName: test-scheduler # 指定调度器名称

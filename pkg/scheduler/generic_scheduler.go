@@ -219,7 +219,10 @@ func (g *genericScheduler) findNodesThatFitPod(ctx context.Context, extenders []
 	}
 
 	// Run "prefilter" plugins.
+	///////// 1) prefilter
 	s := fwk.RunPreFilterPlugins(ctx, state, pod)
+
+	///////// 2) 获取所有node
 	allNodes, err := g.nodeInfoSnapshot.NodeInfos().List()
 	if err != nil {
 		return nil, diagnosis, err
@@ -238,6 +241,7 @@ func (g *genericScheduler) findNodesThatFitPod(ctx context.Context, extenders []
 		return nil, diagnosis, nil
 	}
 
+	//////// 3)处理NominatedNodeName场景
 	// "NominatedNodeName" can potentially be set in a previous scheduling cycle as a result of preemption.
 	// This node is likely the only candidate that will fit the pod, and hence we try it first before iterating over all nodes.
 	if len(pod.Status.NominatedNodeName) > 0 && feature.DefaultFeatureGate.Enabled(features.PreferNominatedNode) {
@@ -250,11 +254,14 @@ func (g *genericScheduler) findNodesThatFitPod(ctx context.Context, extenders []
 			return feasibleNodes, diagnosis, nil
 		}
 	}
+
+	///////// 4) filter
 	feasibleNodes, err := g.findNodesThatPassFilters(ctx, fwk, state, pod, diagnosis, allNodes)
 	if err != nil {
 		return nil, diagnosis, err
 	}
 
+	////////// 5) filter by extender
 	feasibleNodes, err = findNodesThatPassExtenders(extenders, pod, feasibleNodes, diagnosis.NodeToStatusMap)
 	if err != nil {
 		return nil, diagnosis, err
@@ -362,7 +369,7 @@ func findNodesThatPassExtenders(extenders []framework.Extender, pod *v1.Pod, fea
 			}
 			return nil, err
 		}
-
+		// 聚合reason
 		for failedNodeName, failedMsg := range failedAndUnresolvableMap {
 			var aggregatedReasons []string
 			if _, found := statuses[failedNodeName]; found {
@@ -371,7 +378,7 @@ func findNodesThatPassExtenders(extenders []framework.Extender, pod *v1.Pod, fea
 			aggregatedReasons = append(aggregatedReasons, failedMsg)
 			statuses[failedNodeName] = framework.NewStatus(framework.UnschedulableAndUnresolvable, aggregatedReasons...)
 		}
-
+		// 聚合reason
 		for failedNodeName, failedMsg := range failedMap {
 			if _, found := failedAndUnresolvableMap[failedNodeName]; found {
 				// failedAndUnresolvableMap takes precedence over failedMap

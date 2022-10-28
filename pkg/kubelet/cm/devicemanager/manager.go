@@ -252,7 +252,7 @@ func (m *ManagerImpl) Start(activePods ActivePodsFunc, sourcesReady config.Sourc
 	if err != nil {
 		klog.InfoS("Continue after failing to read checkpoint file. Device allocation info may NOT be up-to-date", "err", err)
 	}
-
+	// 1. 创建socket
 	socketPath := filepath.Join(m.socketdir, m.socketname)
 	if err = os.MkdirAll(m.socketdir, 0750); err != nil {
 		return err
@@ -269,6 +269,7 @@ func (m *ManagerImpl) Start(activePods ActivePodsFunc, sourcesReady config.Sourc
 		klog.ErrorS(err, "Fail to clean up stale content under socket dir", "path", m.socketdir)
 	}
 
+	// 2. 启动注册的GRPC Server
 	s, err := net.Listen("unix", socketPath)
 	if err != nil {
 		klog.ErrorS(err, "Failed to listen to socket while starting device plugin registry")
@@ -598,6 +599,7 @@ func (m *ManagerImpl) writeCheckpoint() error {
 // Reads device to container allocation information from disk, and populates
 // m.allocatedDevices accordingly.
 func (m *ManagerImpl) readCheckpoint() error {
+	//1)读取checkpoint
 	registeredDevs := make(map[string][]string)
 	devEntries := make([]checkpoint.PodDevicesEntry, 0)
 	cp := checkpoint.New(devEntries, registeredDevs)
@@ -612,7 +614,11 @@ func (m *ManagerImpl) readCheckpoint() error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	podDevices, registeredDevs := cp.GetData()
+
+	// 2)将checkpoint中的pod和device的关系进行restore
 	m.podDevices.fromCheckpointData(podDevices)
+
+	// 3)将resource的内容先设置为empty，等待re-register逻辑处理
 	m.allocatedDevices = m.podDevices.devices()
 	for resource := range registeredDevs {
 		// During start up, creates empty healthyDevices list so that the resource capacity

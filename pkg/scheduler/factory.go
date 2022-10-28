@@ -223,6 +223,7 @@ func (c *Configurator) createFromPolicy(policy schedulerapi.Policy) (*Scheduler,
 		return nil, fmt.Errorf("profiles and policy config both set, this should not happen")
 	}
 
+	// 构建 predicateKeys
 	predicateKeys := sets.NewString()
 	if policy.Predicates == nil {
 		predicateKeys = lr.DefaultPredicates
@@ -237,6 +238,7 @@ func (c *Configurator) createFromPolicy(policy schedulerapi.Policy) (*Scheduler,
 		}
 	}
 
+	// 构建priorityKeys
 	priorityKeys := make(map[string]int64)
 	if policy.Priorities == nil {
 		klog.V(2).InfoS("Using default priorities")
@@ -277,6 +279,8 @@ func (c *Configurator) createFromPolicy(policy schedulerapi.Policy) (*Scheduler,
 
 	// "PrioritySort", "DefaultPreemption" and "DefaultBinder" were neither predicates nor priorities
 	// before. We add them by default.
+
+	// 添加QueueSort,PostFilter,Bind plugin
 	plugins := schedulerapi.Plugins{
 		QueueSort: schedulerapi.PluginSet{
 			Enabled: []schedulerapi.Plugin{{Name: queuesort.Name}},
@@ -312,6 +316,7 @@ func (c *Configurator) createFromPolicy(policy schedulerapi.Policy) (*Scheduler,
 		return nil, err
 	}
 
+	// 创建调度器
 	return c.create()
 }
 

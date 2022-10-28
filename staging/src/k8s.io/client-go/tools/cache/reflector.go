@@ -63,7 +63,7 @@ type Reflector struct {
 	// The GVK of the object we expect to place in the store if unstructured.
 	expectedGVK *schema.GroupVersionKind
 	// The destination to sync up with the watch source
-	store Store
+	store Store // 会被初始化为 DeltaFIFO
 	// listerWatcher is used to perform lists and watches.
 	listerWatcher ListerWatcher
 
@@ -273,6 +273,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			}()
 			// Attempt to gather list in chunks, if supported by listerWatcher, if not, the first
 			// list request will return the full response.
+			// 1.1 调用 list接口, 为什么使用pager?
 			pager := pager.New(pager.SimplePageFunc(func(opts metav1.ListOptions) (runtime.Object, error) {
 				return r.listerWatcher.List(opts)
 			}))
@@ -345,11 +346,15 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 		}
 		resourceVersion = listMetaInterface.GetResourceVersion()
 		initTrace.Step("Resource version extracted")
+
+		// 1.2.对象转换
 		items, err := meta.ExtractList(list)
 		if err != nil {
 			return fmt.Errorf("unable to understand list result %#v (%v)", list, err)
 		}
 		initTrace.Step("Objects extracted")
+
+		// 1.3. 对象存储到Store中
 		if err := r.syncWith(items, resourceVersion); err != nil {
 			return fmt.Errorf("unable to sync list result: %v", err)
 		}
@@ -361,6 +366,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 		return err
 	}
 
+	// 2. 判断是否需要resync
 	resyncerrc := make(chan error, 1)
 	cancelCh := make(chan struct{})
 	defer close(cancelCh)
@@ -389,6 +395,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 		}
 	}()
 
+	// 3. watch操作,在一个循环里面完成，是watch的典型实现，device plugin也是如此
 	for {
 		// give the stopCh a chance to stop the loop, even in case of continue statements further down on errors
 		select {
@@ -411,6 +418,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 
 		// start the clock before sending the request, since some proxies won't flush headers until after the first watch event is sent
 		start := r.clock.Now()
+		// 3.1 调用watch接口
 		w, err := r.listerWatcher.Watch(options)
 		if err != nil {
 			// If this is "connection refused" error, it means that most likely apiserver is not responsive.
@@ -424,7 +432,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			}
 			return err
 		}
-
+		// 3.2 处理watch结果
 		if err := r.watchHandler(start, w, &resourceVersion, resyncerrc, stopCh); err != nil {
 			if err != errorStopRequested {
 				switch {

@@ -331,6 +331,7 @@ func addAllEventHandlers(
 		},
 	)
 
+	// todo 不理解在干什么？处理非pod和node类型的event
 	buildEvtResHandler := func(at framework.ActionType, gvk framework.GVK, shortGVK string) cache.ResourceEventHandlerFuncs {
 		funcs := cache.ResourceEventHandlerFuncs{}
 		if at&framework.Add != 0 {

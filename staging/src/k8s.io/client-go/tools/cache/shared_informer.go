@@ -367,12 +367,12 @@ func (s *sharedIndexInformer) SetWatchErrorHandler(handler WatchErrorHandler) er
 
 func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
-
+	// 1. 创建DeltaFIFO
 	fifo := NewDeltaFIFOWithOptions(DeltaFIFOOptions{
 		KnownObjects:          s.indexer,
 		EmitDeltaTypeReplaced: true,
 	})
-
+	// 2. 创建controller的config
 	cfg := &Config{
 		Queue:            fifo,
 		ListerWatcher:    s.listerWatcher,
@@ -384,7 +384,7 @@ func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 		Process:           s.HandleDeltas,
 		WatchErrorHandler: s.watchErrorHandler,
 	}
-
+	// 3. 创建controller
 	func() {
 		s.startedLock.Lock()
 		defer s.startedLock.Unlock()
@@ -393,7 +393,7 @@ func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 		s.controller.(*controller).clock = s.clock
 		s.started = true
 	}()
-
+	// 4. 启动processer
 	// Separate stop channel because Processor should be stopped strictly after controller
 	processorStopCh := make(chan struct{})
 	var wg wait.Group
@@ -407,6 +407,7 @@ func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 		defer s.startedLock.Unlock()
 		s.stopped = true // Don't want any new listeners
 	}()
+	// 5. 启动controller
 	s.controller.Run(stopCh)
 }
 
@@ -482,7 +483,7 @@ func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEv
 		klog.V(2).Infof("Handler %v was not added to shared informer because it has stopped already", handler)
 		return
 	}
-
+	// 处理resyncPeriod
 	if resyncPeriod > 0 {
 		if resyncPeriod < minimumResyncPeriod {
 			klog.Warningf("resyncPeriod %v is too small. Changing it to the minimum allowed value of %v", resyncPeriod, minimumResyncPeriod)
@@ -502,9 +503,9 @@ func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEv
 			}
 		}
 	}
-
+	// 创建listener
 	listener := newProcessListener(handler, resyncPeriod, determineResyncPeriod(resyncPeriod, s.resyncCheckPeriod), s.clock.Now(), initialBufferSize)
-
+	// 在informer还没有调用run的时候，直接添加listener到processor
 	if !s.started {
 		s.processor.addListener(listener)
 		return
@@ -518,6 +519,7 @@ func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEv
 	s.blockDeltas.Lock()
 	defer s.blockDeltas.Unlock()
 
+	// 此时informer已经调用过run了，若再有新的handler register，需要将index中的所有object从新按照add event添加一次
 	s.processor.addListener(listener)
 	for _, item := range s.indexer.List() {
 		listener.add(addNotification{newObj: item})
@@ -534,6 +536,7 @@ func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
 		case Sync, Replaced, Added, Updated:
 			s.cacheMutationDetector.AddObject(d.Object)
 			if old, exists, err := s.indexer.Get(d.Object); err == nil && exists {
+				// 如果indexer中已经存在，则更新index
 				if err := s.indexer.Update(d.Object); err != nil {
 					return err
 				}
@@ -552,17 +555,22 @@ func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
 						}
 					}
 				}
+				// 向procesor发送update 通知
 				s.processor.distribute(updateNotification{oldObj: old, newObj: d.Object}, isSync)
 			} else {
+				// 若index中不存在，则插入index
 				if err := s.indexer.Add(d.Object); err != nil {
 					return err
 				}
+				// 向processor发送add 通知
 				s.processor.distribute(addNotification{newObj: d.Object}, false)
 			}
 		case Deleted:
+			// 从index中删除
 			if err := s.indexer.Delete(d.Object); err != nil {
 				return err
 			}
+			// 向processor发送delete 通知
 			s.processor.distribute(deleteNotification{oldObj: d.Object}, false)
 		}
 	}

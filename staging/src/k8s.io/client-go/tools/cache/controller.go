@@ -130,6 +130,7 @@ func (c *controller) Run(stopCh <-chan struct{}) {
 		<-stopCh
 		c.config.Queue.Close()
 	}()
+	// 1. 创建Reflector
 	r := NewReflector(
 		c.config.ListerWatcher,
 		c.config.ObjectType,
@@ -148,9 +149,10 @@ func (c *controller) Run(stopCh <-chan struct{}) {
 	c.reflectorMutex.Unlock()
 
 	var wg wait.Group
-
+	// 2. 启动Reflector
 	wg.StartWithChannel(stopCh, r.Run)
 
+	// 3. 执行processLoop
 	wait.Until(c.processLoop, time.Second, stopCh)
 	wg.Wait()
 }
@@ -220,7 +222,7 @@ type ResourceEventHandler interface {
 // ResourceEventHandler.  This adapter does not remove the prohibition against
 // modifying the objects.
 type ResourceEventHandlerFuncs struct {
-	AddFunc    func(obj interface{})
+		    func(obj interface{})
 	UpdateFunc func(oldObj, newObj interface{})
 	DeleteFunc func(obj interface{})
 }

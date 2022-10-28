@@ -308,6 +308,7 @@ func NewFramework(r Registry, profile *config.KubeSchedulerProfile, opts ...Opti
 	// get needed plugins from config
 	pg := f.pluginsNeeded(profile.Plugins)
 
+	// 构建需要参数配置map，key为name，value为参数信息
 	pluginConfig := make(map[string]runtime.Object, len(profile.PluginConfig))
 	for i := range profile.PluginConfig {
 		name := profile.PluginConfig[i].Name
@@ -323,6 +324,7 @@ func NewFramework(r Registry, profile *config.KubeSchedulerProfile, opts ...Opti
 	}
 
 	pluginsMap := make(map[string]framework.Plugin)
+
 	for name, factory := range r {
 		// initialize only needed plugins.
 		if _, ok := pg[name]; !ok {

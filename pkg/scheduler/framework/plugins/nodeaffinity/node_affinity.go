@@ -113,6 +113,7 @@ func (pl *NodeAffinity) Filter(ctx context.Context, state *framework.CycleState,
 	}
 
 	// Ignore parsing errors for backwards compatibility.
+	// todo 为什么affinity要通过state处理
 	match, _ := s.requiredNodeSelectorAndAffinity.Match(node)
 	if !match {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonPod)

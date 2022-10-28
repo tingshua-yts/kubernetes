@@ -118,6 +118,11 @@ type DeltaFIFO struct {
 
 	// knownObjects list keys that are "known" --- affecting Delete(),
 	// Replace(), and Resync()
+	// 为index，在DeltaFIFO创建的时候传入的，例如下面所示
+	//   	fifo := NewDeltaFIFOWithOptions(DeltaFIFOOptions{
+	//      	KnownObjects:          s.indexer,
+	//     	EmitDeltaTypeReplaced: true,
+	// })
 	knownObjects KeyListerGetter
 
 	// Used to indicate a queue is closed so a control loop can exit when a queue is empty.
@@ -382,6 +387,7 @@ func dedupDeltas(deltas Deltas) Deltas {
 // If a & b represent the same event, returns the delta that ought to be kept.
 // Otherwise, returns nil.
 // TODO: is there anything other than deletions that need deduping?
+// 从注释上来看，仅处理了Delete阶段可能发生的Dup
 func isDup(a, b *Delta) *Delta {
 	if out := isDeletionDup(a, b); out != nil {
 		return out
@@ -405,11 +411,39 @@ func isDeletionDup(a, b *Delta) *Delta {
 // queueActionLocked appends to the delta list for the object.
 // Caller must lock first.
 func (f *DeltaFIFO) queueActionLocked(actionType DeltaType, obj interface{}) error {
+	// 获得map的key, key的来源为func MetaNamespaceKeyFunc(obj interface{}) (string, error)，简单理解为namespace+objectname
 	id, err := f.KeyOf(obj)
 	if err != nil {
 		return KeyError{obj, err}
 	}
+	// 获得map的values，也就是Deltas
 	oldDeltas := f.items[id]
+	// 在Deltas中插入新的Delta，obj的描述
+	// action type :
+	// const (
+	// 	Added   DeltaType = "Added"
+	// 	Updated DeltaType = "Updated"
+	// 	Deleted DeltaType = "Deleted"
+	// 	// Replaced is emitted when we encountered watch errors and had to do a
+	// 	// relist. We don't know if the replaced object has changed.
+	// 	//
+	// 	// NOTE: Previous versions of DeltaFIFO would use Sync for Replace events
+	// 	// as well. Hence, Replaced is only emitted when the option
+	// 	// EmitDeltaTypeReplaced is true.
+	// 	Replaced DeltaType = "Replaced"
+	// 	// Sync is for synthetic events during a periodic resync.
+	// 	Sync DeltaType = "Sync"
+	// )
+
+	// 	// Object is:
+	//  * If Type is Added or Modified: the new state of the object.
+	//  * If Type is Deleted: the state of the object immediately before deletion.
+	//  * If Type is Bookmark: the object (instance of a type being watched) where
+	//    only ResourceVersion field is set. On successful restart of watch from a
+	//    bookmark resourceVersion, client is guaranteed to not get repeat event
+	//    nor miss any events.
+	//  * If Type is Error: *api.Status is recommended; other types may make sense
+	//    depending on context
 	newDeltas := append(oldDeltas, Delta{actionType, obj})
 	newDeltas = dedupDeltas(newDeltas)
 
@@ -568,6 +602,7 @@ func (f *DeltaFIFO) Replace(list []interface{}, resourceVersion string) error {
 		action = Replaced
 	}
 
+	// 1. 根据list结果，添加 Sync或Replaced类型的Delta
 	// Add Sync/Replaced action for each new item.
 	for _, item := range list {
 		key, err := f.KeyOf(item)
@@ -610,6 +645,7 @@ func (f *DeltaFIFO) Replace(list []interface{}, resourceVersion string) error {
 		return nil
 	}
 
+	// 查看不再list结果中，而存在cache中的key，并创造Delete Delta
 	// Detect deletions not already in the queue.
 	knownKeys := f.knownObjects.ListKeys()
 	queuedDeletions := 0
